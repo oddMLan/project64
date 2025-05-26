@@ -127,9 +127,11 @@ CEnhancement::CEnhancement(const char * Ident) :
     m_SelectedOption(0xFFFF0000),
     m_OnByDefault(false),
     m_Active(false),
+    m_Valid(false),
     m_OverClock(false),
     m_OverClockModifier(1),
-    m_Valid(false)
+    m_Source(SourceType::System),
+    m_IsOverride(false)
 {
 }
 
@@ -139,9 +141,11 @@ CEnhancement::CEnhancement(const char * Ident, const char * Entry) :
     m_SelectedOption(0xFFFF0000),
     m_OnByDefault(false),
     m_Active(false),
+    m_Valid(false),
     m_OverClock(false),
     m_OverClockModifier(1),
-    m_Valid(false)
+    m_Source(SourceType::System),
+    m_IsOverride(false)
 {
     stdstr EntryLine(Entry);
     EntryLine.Replace("\r", "");

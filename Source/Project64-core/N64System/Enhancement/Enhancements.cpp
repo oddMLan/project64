@@ -123,7 +123,7 @@ void CEnhancements::UpdateCheats(const CEnhancementList & Cheats)
     for (CEnhancementList::const_iterator itr = Cheats.begin(); itr != Cheats.end(); itr++)
     {
         const CEnhancement & Enhancement = itr->second;
-        if (!Enhancement.Valid())
+        if (!Enhancement.Valid() || Enhancement.GetSource() != CEnhancement::SourceType::User)
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
             continue;
@@ -169,7 +169,7 @@ void CEnhancements::UpdateEnhancements(const CEnhancementList & Enhancements)
     for (CEnhancementList::const_iterator itr = Enhancements.begin(); itr != Enhancements.end(); itr++)
     {
         const CEnhancement & Enhancement = itr->second;
-        if (!Enhancement.Valid())
+        if (!Enhancement.Valid() || Enhancement.GetSource() != CEnhancement::SourceType::User)
         {
             g_Notify->BreakPoint(__FILE__, __LINE__);
             continue;
@@ -239,27 +239,102 @@ void CEnhancements::ResetCodes(CMipsMemoryVM * MMU)
 void CEnhancements::LoadEnhancements(const char * Ident, SectionFiles & Files, std::unique_ptr<CEnhancmentFile> & File, CEnhancementList & EnhancementList)
 {
     std::string SectionIdent = g_Settings->LoadStringVal(Game_IniKey);
-    SectionFiles::const_iterator CheatFileItr = Files.find(SectionIdent);
-    bool FoundFile = false;
-    if (CheatFileItr != Files.end())
+    EnhancementList.clear();
+
+    // Stage 1: Load system enhancements
+    SettingID SystemDirSetting = (strcmp(Ident, CEnhancement::CheatIdent) == 0) ? SupportFile_CheatDir : SupportFile_EnhancementDir;
+    std::string SystemFileExt = (strcmp(Ident, CEnhancement::CheatIdent) == 0) ? "cht" : "enh";
+
+    CPath SystemFile(g_Settings->LoadStringVal(SystemDirSetting), stdstr_f("*.%s", SystemFileExt.c_str()).c_str());
+#ifdef _WIN32
+    SystemFile.NormalizePath(CPath(CPath::MODULE_DIRECTORY));
+#endif
+
+    if (SystemFile.FindFirst())
     {
-        CPath CheatFile(CheatFileItr->second);
-        if (CheatFile.Exists())
+        do
         {
-            if (File.get() == nullptr || strcmp(File->FileName(), CheatFile) != 0)
+            CEnhancmentFile SystemEnhancementFile(SystemFile, Ident);
+            CEnhancmentFile::SectionList Sections;
+            SystemEnhancementFile.GetSections(Sections);
+
+            for (CEnhancmentFile::SectionList::const_iterator itr = Sections.begin(); itr != Sections.end(); itr++)
             {
-                File.reset(new CEnhancmentFile(CheatFile, Ident));
+                if (strcmp(itr->c_str(), SectionIdent.c_str()) == 0)
+                {
+                    CEnhancementList SystemEnhancements;
+                    SystemEnhancementFile.GetEnhancementList(SectionIdent.c_str(), SystemEnhancements); // Mark all system enhancements as System source and add to main list
+                    for (CEnhancementList::iterator enhItr = SystemEnhancements.begin(); enhItr != SystemEnhancements.end(); enhItr++)
+                    {
+                        enhItr->second.SetSource(CEnhancement::SourceType::System);
+                        EnhancementList.insert(std::make_pair(enhItr->first, enhItr->second));
+                    }
+                    break;
+                }
             }
-            EnhancementList.clear();
-            File->GetEnhancementList(SectionIdent.c_str(), EnhancementList);
-            FoundFile = true;
-        }
+        } while (SystemFile.FindNext());
+    }
+    // Stage 2: Load user enhancements (will override system ones with same name)
+    SettingID UserDirSetting = (strcmp(Ident, CEnhancement::CheatIdent) == 0) ? SupportFile_UserCheatDir : SupportFile_UserEnhancementDir;
+
+    CPath UserFile(g_Settings->LoadStringVal(UserDirSetting), stdstr_f("*.%s", SystemFileExt.c_str()).c_str());
+#ifdef _WIN32
+    UserFile.NormalizePath(CPath(CPath::MODULE_DIRECTORY));
+#endif
+
+    if (UserFile.FindFirst())
+    {
+        do
+        {
+            CEnhancmentFile UserEnhancementFile(UserFile, Ident);
+            CEnhancmentFile::SectionList Sections;
+            UserEnhancementFile.GetSections(Sections);
+
+            for (CEnhancmentFile::SectionList::const_iterator itr = Sections.begin(); itr != Sections.end(); itr++)
+            {
+                if (strcmp(itr->c_str(), SectionIdent.c_str()) == 0)
+                {
+                    CEnhancementList UserEnhancements;
+                    UserEnhancementFile.GetEnhancementList(SectionIdent.c_str(), UserEnhancements);
+
+                    // Mark all user enhancements as User source and add/override in main list
+                    for (CEnhancementList::iterator enhItr = UserEnhancements.begin(); enhItr != UserEnhancements.end(); enhItr++)
+                    {
+                        enhItr->second.SetSource(CEnhancement::SourceType::User);
+
+                        // Check if this user enhancement overrides a system enhancement
+                        auto existingItr = EnhancementList.find(enhItr->first);
+                        bool isOverride = (existingItr != EnhancementList.end() && existingItr->second.GetSource() == CEnhancement::SourceType::System);
+                        enhItr->second.SetIsOverride(isOverride);
+
+                        // Add or update the enhancement in the main list
+                        auto result = EnhancementList.insert(std::make_pair(enhItr->first, enhItr->second));
+                        if (!result.second) {
+                            result.first->second = enhItr->second;
+                        }
+                    }
+
+                    // Set File to the user file for potential saving operations
+                    if (File.get() == nullptr || strcmp(File->FileName(), UserFile) != 0)
+                    {
+                        File.reset(new CEnhancmentFile(UserFile, Ident));
+                    }
+                    break;
+                }
+            }
+        } while (UserFile.FindNext());
     }
 
-    if (!FoundFile)
+    // If no user file was found but we have system enhancements, clear File since we can't save to system files
+    if (File.get() == nullptr && !EnhancementList.empty())
     {
-        File = nullptr;
-        EnhancementList.clear();
+        // Create user file path for potential future saves
+        std::string GameName = g_Settings->LoadStringVal(Rdb_GoodName);
+        CPath PotentialUserFile(g_Settings->LoadStringVal(UserDirSetting), stdstr_f("%s.%s", GameName.c_str(), SystemFileExt.c_str()).c_str());
+#ifdef _WIN32
+        PotentialUserFile.NormalizePath(CPath(CPath::MODULE_DIRECTORY));
+#endif
+        File.reset(new CEnhancmentFile(PotentialUserFile, Ident));
     }
 }
 

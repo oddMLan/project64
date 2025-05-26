@@ -404,11 +404,24 @@ void CEnhancementUI::AddCodeLayers(LPARAM Enhancement, const std::wstring & Name
             return;
         }
         tv.item.hItem = m_TreeList.GetNextSiblingItem(tv.item.hItem);
-    }
-
-    tv.hInsertAfter = TVI_SORT;
+    }    tv.hInsertAfter = TVI_SORT;
     tv.item.mask = TVIF_TEXT | TVIF_PARAM;
-    tv.item.pszText = Text;
+    // Check if this is an overridden enhancement (user override of system enhancement)
+    bool isOverride = false;
+    if (Enhancement != 0) {
+        CEnhancement* enh = (CEnhancement*)Enhancement;
+        isOverride = enh->GetSource() == CEnhancement::SourceType::User && enh->IsOverride();
+    }
+    
+    // Set bold text for overridden enhancements
+    if (isOverride) {
+        tv.item.mask |= TVIF_STATE;
+        tv.item.state = TVIS_BOLD;
+        tv.item.stateMask = TVIS_BOLD;
+    }
+    
+    wcscpy(Item, Text);
+    tv.item.pszText = Item;
     tv.item.lParam = Enhancement;
     tv.hParent = hParent;
     hParent = m_TreeList.InsertItem(&tv);

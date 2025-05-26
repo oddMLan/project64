@@ -421,7 +421,6 @@ void CCheatList::RefreshItems()
 void CCheatList::AddCodeLayers(LPARAM Enhancement, const std::wstring & Name, HTREEITEM hParent, bool CheatActive)
 {
     TV_INSERTSTRUCT tv;
-
     wchar_t Text[500], Item[500];
     if (Name.length() > ((sizeof(Text) / sizeof(Text[0])) - 5))
     {
@@ -457,11 +456,24 @@ void CCheatList::AddCodeLayers(LPARAM Enhancement, const std::wstring & Name, HT
             return;
         }
         tv.item.hItem = TreeView_GetNextSibling(m_hCheatTree, tv.item.hItem);
-    }
-
-    tv.hInsertAfter = TVI_SORT;
+    }    tv.hInsertAfter = TVI_SORT;
     tv.item.mask = TVIF_TEXT | TVIF_PARAM;
-    tv.item.pszText = Text;
+    // Check if this is an overridden cheat (user override of system cheat)
+    bool isOverride = false;
+    if (Enhancement != 0) {
+        CEnhancement* enh = (CEnhancement*)Enhancement;
+        isOverride = enh->GetSource() == CEnhancement::SourceType::User && enh->IsOverride();
+    }
+    
+    // Set bold text for overridden cheats
+    if (isOverride) {
+        tv.item.mask |= TVIF_STATE;
+        tv.item.state = TVIS_BOLD;
+        tv.item.stateMask = TVIS_BOLD;
+    }
+    
+    wcscpy(Item, Text);
+    tv.item.pszText = Item;
     tv.item.lParam = Enhancement;
     tv.hParent = hParent;
     hParent = TreeView_InsertItem(m_hCheatTree, &tv);
@@ -731,7 +743,7 @@ LRESULT CEditCheat::OnAddCheat(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCt
     {
         return 0;
     }
-
+    Enhancement.SetSource(CEnhancement::SourceType::User);
     if (m_EditEnhancement != nullptr)
     {
         m_EditEnhancement->SetName(NewCheatName.c_str());
@@ -739,6 +751,7 @@ LRESULT CEditCheat::OnAddCheat(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCt
         m_EditEnhancement->SetEntries(Enhancement.GetEntries());
         m_EditEnhancement->SetOptions(Enhancement.GetOptions());
         m_EditEnhancement->SetNote(GetCWindowText(GetDlgItem(IDC_NOTES)).c_str());
+        m_EditEnhancement->SetSource(CEnhancement::SourceType::User);
     }
     else
     {

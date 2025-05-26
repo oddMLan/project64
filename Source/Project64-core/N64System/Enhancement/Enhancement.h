@@ -6,6 +6,8 @@
 class CEnhancement
 {
 public:
+    enum class SourceType { System, User };
+
     static const char * CheatIdent;
     static const char * EnhancementIdent;
 
@@ -35,6 +37,8 @@ public:
     void SetActive(bool Active);
     void SetOnByDefault(bool OnByDefault);
     void SetOverClock(bool OverClock, uint32_t OverClockModifier);
+    void SetSource(SourceType src) { m_Source = src; }
+    void SetIsOverride(bool isOverride) { m_IsOverride = isOverride; }
 
     inline const std::string & GetName(void) const
     {
@@ -96,6 +100,8 @@ public:
     {
         return (uint16_t)(m_SelectedOption & 0xFFFF);
     }
+    SourceType GetSource() const { return m_Source; }
+    bool IsOverride() const { return m_IsOverride; }
 
 private:
     CEnhancement();
@@ -118,4 +124,6 @@ private:
     uint32_t m_OverClockModifier;
     bool m_Active;
     bool m_Valid;
+    SourceType m_Source = SourceType::System;
+    bool m_IsOverride = false;
 };
